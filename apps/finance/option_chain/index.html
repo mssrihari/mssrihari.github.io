@@ -133,12 +133,12 @@
   /* ── OI Chart popup ── */
   .chart-icon{cursor:pointer;font-size:.82rem;opacity:.5;transition:opacity .2s}
   .chart-icon:hover{opacity:1}
-  #oi-chart-popup{display:none;position:fixed;z-index:2000;background:var(--bg-card);border:1px solid var(--border-bright);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,.5);padding:1rem 1.2rem;width:min(520px,92vw);max-height:360px}
+  #oi-chart-popup{display:none;position:fixed;z-index:2000;background:var(--bg-card);border:1px solid var(--border-bright);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,.5);padding:1rem 1.2rem;width:min(560px,92vw);max-height:420px}
   #oi-chart-popup .popup-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;cursor:grab;user-select:none}
   #oi-chart-popup .popup-title{font-family:var(--font-sans);font-weight:600;font-size:1rem;color:var(--cyan)}
   #oi-chart-popup .popup-close{cursor:pointer;font-size:1.2rem;color:var(--text-muted);background:none;border:none;padding:.2rem .5rem}
   #oi-chart-popup .popup-close:hover{color:var(--text-primary)}
-  #oi-chart-popup canvas{width:100%!important;height:240px!important}
+  #oi-chart-popup canvas{width:100%!important;height:280px!important}
 
   /* Max/Min OI highlights */
   td.max-oi{background:var(--red-dim);font-weight:700}
@@ -816,7 +816,7 @@ function render(rows, expiryDate) {
   const timeLabel = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
   for (const r of rows) {
     if (!oiHistory[r.strike]) oiHistory[r.strike] = [];
-    oiHistory[r.strike].push({ t: timeLabel, ceOI: r.ceOI, peOI: r.peOI });
+    oiHistory[r.strike].push({ t: timeLabel, ceOI: r.ceOI, peOI: r.peOI, ceLTP: r.ceLTP, peLTP: r.peLTP });
   }
 
   // Update live chart if popup is open
@@ -1428,8 +1428,8 @@ function openOIChart(strike, event) {
 
   // Position popup near click, but keep within viewport
   const rect = popup.getBoundingClientRect();
-  const x = Math.min(event.clientX - 100, window.innerWidth - 540);
-  const y = Math.min(event.clientY + 20, window.innerHeight - 380);
+  const x = Math.min(event.clientX - 100, window.innerWidth - 580);
+  const y = Math.min(event.clientY + 20, window.innerHeight - 440);
   popup.style.left = Math.max(10, x) + 'px';
   popup.style.top = Math.max(10, y) + 'px';
   popup.style.display = 'block';
@@ -1454,8 +1454,10 @@ function updateOIChart(strike) {
   if (!hist || hist.length === 0) return;
 
   const labels = hist.map(h => h.t);
-  const ceData = hist.map(h => h.ceOI);
-  const peData = hist.map(h => h.peOI);
+  const ceOIData = hist.map(h => h.ceOI);
+  const peOIData = hist.map(h => h.peOI);
+  const ceLTPData = hist.map(h => h.ceLTP);
+  const peLTPData = hist.map(h => h.peLTP);
 
   const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
   const gridColor = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)';
@@ -1464,9 +1466,11 @@ function updateOIChart(strike) {
   if (oiChartInstance) {
     // Update existing chart data
     oiChartInstance.data.labels = labels;
-    oiChartInstance.data.datasets[0].data = ceData;
-    oiChartInstance.data.datasets[1].data = peData;
-    oiChartInstance.update('none');  // no animation for live updates
+    oiChartInstance.data.datasets[0].data = ceOIData;
+    oiChartInstance.data.datasets[1].data = peOIData;
+    oiChartInstance.data.datasets[2].data = ceLTPData;
+    oiChartInstance.data.datasets[3].data = peLTPData;
+    oiChartInstance.update('none');
     return;
   }
 
@@ -1479,23 +1483,47 @@ function updateOIChart(strike) {
       datasets: [
         {
           label: 'CE OI',
-          data: ceData,
+          data: ceOIData,
           borderColor: '#00e676',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
           tension: 0,
-          fill: false
+          fill: false,
+          yAxisID: 'yOI'
         },
         {
           label: 'PE OI',
-          data: peData,
+          data: peOIData,
           borderColor: '#ff5252',
           borderWidth: 2,
           pointRadius: 0,
           pointHoverRadius: 4,
           tension: 0,
-          fill: false
+          fill: false,
+          yAxisID: 'yOI'
+        },
+        {
+          label: 'CE Price',
+          data: ceLTPData,
+          borderColor: '#2563eb',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          tension: 0,
+          fill: false,
+          yAxisID: 'yPrice'
+        },
+        {
+          label: 'PE Price',
+          data: peLTPData,
+          borderColor: isDark ? '#e2e8f0' : '#1a1a1a',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          pointHoverRadius: 3,
+          tension: 0,
+          fill: false,
+          yAxisID: 'yPrice'
         }
       ]
     },
@@ -1506,7 +1534,24 @@ function updateOIChart(strike) {
       plugins: {
         legend: {
           position: 'top',
-          labels: { color: textColor, font: { family: 'DM Sans', size: 11 }, boxWidth: 12, padding: 8 }
+          labels: {
+            color: textColor,
+            font: { family: 'DM Sans', size: 11 },
+            boxWidth: 14,
+            padding: 8,
+            usePointStyle: false,
+            generateLabels: function(chart) {
+              return chart.data.datasets.map((ds, i) => ({
+                text: ds.label,
+                fillStyle: 'transparent',
+                strokeStyle: ds.borderColor,
+                lineWidth: ds.borderWidth,
+                lineDash: ds.borderDash || [],
+                hidden: !chart.isDatasetVisible(i),
+                datasetIndex: i
+              }));
+            }
+          }
         },
         tooltip: {
           backgroundColor: isDark ? '#1a2332' : '#fff',
@@ -1516,7 +1561,9 @@ function updateOIChart(strike) {
           borderWidth: 1,
           callbacks: {
             label: function(ctx) {
-              return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('en-IN');
+              const v = ctx.parsed.y;
+              const isPrice = ctx.datasetIndex >= 2;
+              return ctx.dataset.label + ': ' + (isPrice ? '₹' + v.toFixed(2) : v.toLocaleString('en-IN'));
             }
           }
         }
@@ -1531,13 +1578,27 @@ function updateOIChart(strike) {
           },
           grid: { color: gridColor }
         },
-        y: {
+        yOI: {
+          type: 'linear',
+          position: 'left',
+          title: { display: true, text: 'OI', color: textColor, font: { family: 'DM Sans', size: 10 } },
           ticks: {
             color: textColor,
             font: { family: 'IBM Plex Mono', size: 10 },
             callback: v => v >= 100000 ? (v / 100000).toFixed(1) + 'L' : v.toLocaleString('en-IN')
           },
           grid: { color: gridColor }
+        },
+        yPrice: {
+          type: 'linear',
+          position: 'right',
+          title: { display: true, text: 'Price ₹', color: textColor, font: { family: 'DM Sans', size: 10 } },
+          ticks: {
+            color: textColor,
+            font: { family: 'IBM Plex Mono', size: 10 },
+            callback: v => '₹' + v.toFixed(1)
+          },
+          grid: { drawOnChartArea: false }
         }
       }
     }
