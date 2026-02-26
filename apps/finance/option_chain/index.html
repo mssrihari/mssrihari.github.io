@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIFTY Option Chain — Live Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg-primary:#0a0e17;--bg-secondary:#111827;--bg-card:#151d2e;
+    --bg-table-row:#0d1320;--bg-table-alt:#111a2b;
+    --border:#1e2a3a;--border-bright:#2a3a52;
+    --text-primary:#e2e8f0;--text-secondary:#8896a8;--text-muted:#5a6a7e;
+    --green:#00e676;--green-dim:#00c85320;--green-row:#0a2a1a;
+    --red:#ff5252;--red-dim:#ff525220;--red-row:#2a0a0a;
+    --blue:#448aff;--amber:#ffc107;--cyan:#00e5ff;--purple:#b388ff;
+    --long-buildup:#00e67618;--short-buildup:#ff525218;
+    --short-covering:#448aff18;--long-unwinding:#ffc10718;
+    --noise:#ffffff08;--new-entry:#b388ff18;
+    --atm-glow:#ffc10730;
+    --font-mono:'IBM Plex Mono','Menlo','Consolas',monospace;--font-sans:'DM Sans','Segoe UI',sans-serif;
+    --config-overlay-bg:rgba(5,8,14,0.92);
+    --config-shadow:rgba(0,0,0,.6);
+    --hover-row:#1a253a;
+    --toggle-bg:#1e2a3a;--toggle-knob:#e2e8f0;
+  }
+
+  /* ── Light Theme ── */
+  html[data-theme="light"]{
+    --bg-primary:#f4f6f9;--bg-secondary:#ffffff;--bg-card:#ffffff;
+    --bg-table-row:#fafbfc;--bg-table-alt:#f0f2f5;
+    --border:#d8dde6;--border-bright:#bcc3cf;
+    --text-primary:#1a202c;--text-secondary:#4a5568;--text-muted:#8795a8;
+    --green:#0d9e4f;--green-dim:#0d9e4f20;--green-row:#e6f9ee;
+    --red:#d63031;--red-dim:#d6303120;--red-row:#fde8e8;
+    --blue:#2b6cb0;--amber:#b7791f;--cyan:#0987a0;--purple:#6b46c1;
+    --long-buildup:#0d9e4f15;--short-buildup:#d6303115;
+    --short-covering:#2b6cb015;--long-unwinding:#b7791f15;
+    --noise:#00000006;--new-entry:#6b46c115;
+    --atm-glow:#b7791f20;
+    --config-overlay-bg:rgba(244,246,249,0.92);
+    --config-shadow:rgba(0,0,0,.12);
+    --hover-row:#e8ecf2;
+    --toggle-bg:#cbd5e0;--toggle-knob:#1a202c;
+  }
+
+  html{font-size:15px}
+  body{background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-sans);min-height:100vh;overflow-x:hidden}
+
+  /* ── Config Overlay ── */
+  #config-overlay{position:fixed;inset:0;z-index:1000;background:var(--config-overlay-bg);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center}
+  #config-overlay.hidden{display:none}
+  .config-box{background:var(--bg-card);border:1px solid var(--border-bright);border-radius:12px;padding:2.5rem;width:min(540px,92vw);box-shadow:0 24px 80px var(--config-shadow)}
+  .config-box h2{font-family:var(--font-sans);font-size:1.6rem;margin-bottom:.3rem;color:var(--cyan)}
+  .config-box p{color:var(--text-secondary);font-size:.92rem;margin-bottom:1.8rem;line-height:1.5}
+  .config-box label{display:block;color:var(--text-secondary);font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:.35rem;margin-top:1rem}
+  .config-box input,.config-box select{width:100%;padding:.7rem .9rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-family:var(--font-mono);font-size:.92rem;outline:none;transition:border .2s}
+  .config-box input:focus{border-color:var(--cyan)}
+  .config-box .hint{font-size:.78rem;color:var(--text-muted);margin-top:.2rem}
+  .btn-connect{margin-top:1.8rem;width:100%;padding:.8rem;background:linear-gradient(135deg,#00e5ff,#448aff);border:none;border-radius:8px;color:#0a0e17;font-family:var(--font-sans);font-weight:700;font-size:1.05rem;cursor:pointer;letter-spacing:.03em;transition:opacity .2s}
+  .btn-connect:hover{opacity:.88}
+  .btn-connect:disabled{opacity:.4;cursor:not-allowed}
+  .config-err{color:var(--red);font-size:.85rem;margin-top:.6rem;min-height:1.2rem}
+
+  /* ── Config Stepper ── */
+  .stepper{display:flex;gap:0;margin-bottom:1.5rem}
+  .step-indicator{flex:1;text-align:center;padding:.5rem .2rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);border-bottom:2px solid var(--border);cursor:pointer;transition:all .3s}
+  .step-indicator.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+  .step-indicator.done{color:var(--green);border-bottom-color:var(--green)}
+  .step-panel{display:none}
+  .step-panel.active{display:block}
+  .btn-step{padding:.6rem 1.3rem;border:1px solid var(--border);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-sans);font-size:.88rem;cursor:pointer;transition:all .2s;margin-top:.8rem}
+  .btn-step:hover{border-color:var(--cyan);color:var(--cyan)}
+  .btn-step.primary{background:linear-gradient(135deg,#00e5ff,#448aff);border:none;color:#0a0e17;font-weight:600}
+  html[data-theme="light"] .btn-step.primary{color:#fff}
+  .btn-step:disabled{opacity:.4;cursor:not-allowed}
+  .btn-row{display:flex;gap:.6rem;margin-top:1rem;align-items:center}
+  .step-success{color:var(--green);font-size:.88rem;margin-top:.5rem;display:flex;align-items:center;gap:.4rem}
+  .step-info{color:var(--text-secondary);font-size:.82rem;line-height:1.55;margin:.6rem 0;padding:.7rem .9rem;background:var(--bg-primary);border:1px solid var(--border);border-radius:6px}
+  .token-display{word-break:break-all;font-size:.8rem;color:var(--green);background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:.5rem .7rem;margin-top:.5rem;max-height:4rem;overflow-y:auto}
+  .or-divider{display:flex;align-items:center;gap:.8rem;margin:.8rem 0;font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
+  .or-divider::before,.or-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+
+  /* ── Topbar Expiry Select ── */
+  .topbar-select{background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:.3rem .6rem;color:var(--cyan);font-family:var(--font-sans);font-size:.82rem;cursor:pointer;outline:none;transition:border .2s;max-width:200px}
+  .topbar-select:hover,.topbar-select:focus{border-color:var(--cyan)}
+
+  /* ── Top Bar ── */
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:.7rem 1.5rem;border-bottom:1px solid var(--border);background:var(--bg-secondary)}
+  .topbar-left{display:flex;align-items:center;gap:1rem}
+  .topbar-logo{font-family:var(--font-sans);font-weight:700;font-size:1.25rem;color:var(--cyan);letter-spacing:-.02em}
+  .topbar-logo span{color:var(--text-muted);font-weight:400}
+  .status-badge{display:inline-flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text-secondary);background:var(--bg-primary);padding:.3rem .7rem;border-radius:20px;border:1px solid var(--border)}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--text-muted);transition:background .3s}
+  .status-dot.live{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .topbar-right{display:flex;align-items:center;gap:.8rem}
+  .topbar-btn{background:var(--bg-primary);border:1px solid var(--border);border-radius:6px;padding:.35rem .8rem;color:var(--text-secondary);font-family:var(--font-sans);font-size:.82rem;cursor:pointer;transition:all .2s}
+  .topbar-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+  .topbar-btn.active{border-color:var(--green);color:var(--green)}
+
+  /* ── Summary Cards ── */
+  .summary-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.75rem;padding:1rem 1.5rem}
+  .card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:1rem 1.2rem;position:relative;overflow:hidden}
+  .card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+  .card.cyan::before{background:var(--cyan)}.card.green::before{background:var(--green)}
+  .card.red::before{background:var(--red)}.card.amber::before{background:var(--amber)}
+  .card.blue::before{background:var(--blue)}.card.purple::before{background:var(--purple)}
+  .card-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:.35rem}
+  .card-value{font-size:1.45rem;font-weight:600;color:var(--text-primary);line-height:1.2;font-family:var(--font-mono)}
+  .card-sub{font-size:.82rem;color:var(--text-secondary);margin-top:.25rem;font-family:var(--font-mono)}
+
+  /* ── Table Container ── */
+  .table-wrap{padding:0 1rem 2rem;overflow-x:auto}
+  .chain-table{width:100%;border-collapse:separate;border-spacing:0;font-size:.9rem;font-family:var(--font-mono)}
+  .chain-table thead th{position:sticky;top:0;z-index:10;background:var(--bg-secondary);padding:.5rem .45rem;text-transform:uppercase;font-size:.68rem;letter-spacing:.06em;color:var(--text-muted);border-bottom:2px solid var(--border-bright);white-space:nowrap}
+  .chain-table thead th.ce-header{color:var(--green)}
+  .chain-table thead th.pe-header{color:var(--red)}
+  .chain-table thead th.strike-header{color:var(--amber)}
+  .chain-table tbody td{padding:.4rem .45rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;transition:background .3s}
+  .chain-table tbody tr{background:var(--bg-table-row)}
+  .chain-table tbody tr:nth-child(even){background:var(--bg-table-alt)}
+  .chain-table tbody tr:hover{background:var(--hover-row)!important}
+  .chain-table tbody tr.atm-row{background:var(--atm-glow)!important;border-top:1px solid var(--amber);border-bottom:1px solid var(--amber)}
+  td.strike-cell{text-align:center;font-weight:700;color:var(--amber);font-size:1rem;letter-spacing:.02em;position:relative}
+  td.strike-cell.atm::after{content:'ATM';position:absolute;right:4px;top:2px;font-size:.5rem;color:var(--bg-primary);background:var(--amber);padding:1px 5px;border-radius:3px;font-weight:700}
+  .pos{color:var(--green)}.neg{color:var(--red)}.zero{color:var(--text-muted)}
+  .ltp-cell{color:var(--text-primary);font-weight:600}
+  .pcr-cell{font-size:.78rem;text-align:center}
+
+  /* Max/Min OI highlights */
+  td.max-oi{background:var(--red-dim);font-weight:700}
+  td.min-oi{background:var(--green-dim);font-weight:700}
+  html[data-theme="light"] td.max-oi{background:#d6303118}
+  html[data-theme="light"] td.min-oi{background:#0d9e4f18}
+
+  /* Buildup badges */
+  .buildup{display:inline-block;padding:3px 8px;border-radius:4px;font-size:.7rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-width:80px;text-align:center}
+  .buildup.LONG_BUILDUP{background:var(--long-buildup);color:var(--green);border:1px solid #00e67630}
+  .buildup.SHORT_BUILDUP{background:var(--short-buildup);color:var(--red);border:1px solid #ff525230}
+  .buildup.SHORT_COVERING{background:var(--short-covering);color:var(--blue);border:1px solid #448aff30}
+  .buildup.LONG_UNWINDING{background:var(--long-unwinding);color:var(--amber);border:1px solid #ffc10730}
+  .buildup.NEW{background:var(--new-entry);color:var(--purple);border:1px solid #b388ff30}
+  .buildup.NOISE{background:var(--noise);color:var(--text-muted);border:1px solid transparent}
+
+  /* Row shading by buildup */
+  tr.row-LONG_BUILDUP td{background:var(--long-buildup)}
+  tr.row-SHORT_BUILDUP td{background:var(--short-buildup)}
+  tr.row-SHORT_COVERING td{background:var(--short-covering)}
+  tr.row-LONG_UNWINDING td{background:var(--long-unwinding)}
+
+  /* ── Poll timer bar ── */
+  .poll-bar{height:2px;background:var(--cyan);width:0%;transition:width linear}
+  .poll-bar-track{height:2px;background:var(--border);width:100%}
+
+  /* ── Responsive ── */
+  @media(max-width:900px){
+    .summary-row{grid-template-columns:repeat(2,1fr)}
+    html{font-size:13px}
+  }
+
+  /* ── Loading / Error states ── */
+  .loading-msg{text-align:center;padding:4rem;color:var(--text-muted);font-size:1.05rem}
+  .err-toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--red);color:#fff;padding:.7rem 1.3rem;border-radius:8px;font-size:.88rem;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none}
+  .err-toast.show{opacity:1;pointer-events:auto}
+
+  /* ── Theme Toggle Switch ── */
+  .theme-toggle{display:flex;align-items:center;gap:.45rem;cursor:pointer;user-select:none}
+  .theme-toggle-label{font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em}
+  .toggle-track{width:38px;height:22px;border-radius:20px;background:var(--toggle-bg);position:relative;transition:background .3s}
+  .toggle-knob{width:18px;height:18px;border-radius:50%;background:var(--toggle-knob);position:absolute;top:2px;left:2px;transition:transform .3s,background .3s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  html[data-theme="light"] .toggle-knob{transform:translateX(16px)}
+  .toggle-icon{font-size:.95rem;line-height:1}
+
+  /* Light-mode buildup border tweaks */
+  html[data-theme="light"] .buildup.LONG_BUILDUP{border-color:#0d9e4f40}
+  html[data-theme="light"] .buildup.SHORT_BUILDUP{border-color:#d6303140}
+  html[data-theme="light"] .buildup.SHORT_COVERING{border-color:#2b6cb040}
+  html[data-theme="light"] .buildup.LONG_UNWINDING{border-color:#b7791f40}
+  html[data-theme="light"] .buildup.NEW{border-color:#6b46c140}
+  html[data-theme="light"] .btn-connect{color:#ffffff}
+
+  /* ── Legend ── */
+  .legend-bar{display:flex;align-items:center;gap:1rem;padding:.5rem 1.5rem;flex-wrap:wrap}
+  .legend-item{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+  .legend-swatch{width:14px;height:14px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- ═══════ CONFIG OVERLAY ═══════ -->
+<div id="config-overlay">
+  <div class="config-box" style="width:min(540px,92vw)">
+    <h2>⚡ Nifty Option Chain</h2>
+    <p>Generate your Fyers access token and launch the dashboard — all from this page.</p>
+
+    <!-- Stepper indicators -->
+    <div class="stepper">
+      <div class="step-indicator active" id="si-1" onclick="goToStep(1)">① App ID</div>
+      <div class="step-indicator" id="si-2" onclick="goToStep(2)">② Auth Code</div>
+      <div class="step-indicator" id="si-3" onclick="goToStep(3)">③ Access Token</div>
+      <div class="step-indicator" id="si-4" onclick="goToStep(4)">④ Launch</div>
+    </div>
+
+    <!-- ─── STEP 1: App Credentials ─── -->
+    <div class="step-panel active" id="sp-1">
+      <div class="step-info">
+        Create an app at <a href="https://myapi.fyers.in/dashboard/" target="_blank" style="color:var(--cyan)">myapi.fyers.in/dashboard</a> if you haven't already.<br>
+        Set redirect URL to: <code style="color:var(--amber);font-size:.68rem">https://trade.fyers.in/api-login/redirect-uri/index.html</code>
+      </div>
+
+      <label>App ID (Client ID)</label>
+      <input id="cfg-appid" placeholder="e.g. L9NY305RTW-100" autocomplete="off">
+
+      <label>Secret Key</label>
+      <input id="cfg-secret" type="password" placeholder="Your app's Secret Key" autocomplete="off">
+      <div class="hint">Found in your app details on the Fyers API dashboard.</div>
+
+      <div class="btn-row">
+        <button class="btn-step primary" onclick="completeStep1()">Next →</button>
+      </div>
+      <div class="config-err" id="cfg-err-1"></div>
+    </div>
+
+    <!-- ─── STEP 2: Get Auth Code ─── -->
+    <div class="step-panel" id="sp-2">
+      <div class="step-info">
+        Click the button below to open the Fyers login page. Log in with your phone, OTP, and PIN.<br>
+        After login, you'll be redirected — <strong>copy the <code>auth_code</code> from the URL bar</strong>.
+      </div>
+
+      <div class="btn-row">
+        <button class="btn-step primary" onclick="openAuthPage()">🔐 Open Fyers Login</button>
+      </div>
+
+      <label style="margin-top:1.2rem">Paste the auth_code here</label>
+      <input id="cfg-authcode" placeholder="eyJhbGci...XXXXX (from the redirect URL)" autocomplete="off">
+      <div class="hint">From the URL: <code>...?auth_code=<strong style="color:var(--amber)">THIS_PART</strong>&state=...</code></div>
+
+      <div class="btn-row">
+        <button class="btn-step" onclick="goToStep(1)">← Back</button>
+        <button class="btn-step primary" onclick="completeStep2()">Generate Token →</button>
+      </div>
+      <div class="config-err" id="cfg-err-2"></div>
+    </div>
+
+    <!-- ─── STEP 3: Access Token Generated ─── -->
+    <div class="step-panel" id="sp-3">
+      <div id="token-generating" style="display:none">
+        <div class="step-info">⏳ Generating access token… please wait.</div>
+      </div>
+      <div id="token-result" style="display:none">
+        <div class="step-success">✅ Access token generated successfully!</div>
+        <div class="token-display" id="token-preview"></div>
+        <div class="hint" style="margin-top:.4rem">This token is valid for 24 hours. It's auto-filled below.</div>
+      </div>
+      <div id="token-error" style="display:none">
+        <div class="config-err" id="cfg-err-3"></div>
+      </div>
+
+      <div class="or-divider">or paste a token manually</div>
+
+      <label>Access Token</label>
+      <input id="cfg-token" type="password" placeholder="Paste access_token if you already have one" autocomplete="off">
+
+      <div class="btn-row">
+        <button class="btn-step" onclick="goToStep(2)">← Back</button>
+        <button class="btn-step primary" onclick="completeStep3()">Next →</button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 4: Final Settings & Launch ─── -->
+    <div class="step-panel" id="sp-4">
+      <div class="step-success" id="token-ready-msg">✅ Token ready — configure remaining settings and launch.</div>
+
+      <label>CORS Proxy (optional)</label>
+      <input id="cfg-proxy" placeholder="https://corsproxy.io/?url=" autocomplete="off">
+      <div class="hint">Required if Fyers blocks browser calls. Try <code>https://corsproxy.io/?url=</code></div>
+
+      <label>Strike range (each side of ATM)</label>
+      <select id="cfg-strikes">
+        <option value="5">5 strikes</option>
+        <option value="10">10 strikes</option>
+        <option value="15">15 strikes</option>
+        <option value="20" selected>20 strikes</option>
+        <option value="25">25 strikes</option>
+        <option value="30">30 strikes</option>
+      </select>
+
+      <div class="config-err" id="cfg-err-4"></div>
+      <button class="btn-connect" id="btn-go" onclick="startDashboard()" style="margin-top:1.2rem">🚀 Launch Dashboard</button>
+
+      <div style="text-align:center;margin-top:1rem">
+        <span class="theme-toggle" onclick="toggleTheme()" style="display:inline-flex;cursor:pointer">
+          <span class="toggle-icon">🌙</span>
+          <div class="toggle-track"><div class="toggle-knob"></div></div>
+          <span class="toggle-icon">☀️</span>
+          <span class="theme-toggle-label" style="margin-left:.3rem" id="theme-mode-label">Dark</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ MAIN DASHBOARD ═══════ -->
+<div id="dashboard" style="display:none">
+
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="topbar-logo">NIFTY<span>.optionchain</span></div>
+      <div class="status-badge"><span class="status-dot" id="status-dot"></span><span id="status-text">Connecting…</span></div>
+      <select class="topbar-select" id="topbar-expiry" onchange="switchExpiry()" title="Switch expiry">
+        <option value="">—</option>
+      </select>
+      <select class="topbar-select" id="topbar-strikes" onchange="switchStrikes()" title="Strikes each side of ATM" style="max-width:110px">
+        <option value="5">5 strikes</option>
+        <option value="10">10 strikes</option>
+        <option value="15">15 strikes</option>
+        <option value="20" selected>20 strikes</option>
+        <option value="25">25 strikes</option>
+        <option value="30">30 strikes</option>
+      </select>
+    </div>
+    <div class="topbar-right">
+      <span style="font-size:.82rem;color:var(--text-muted)" id="poll-counter">Polls: 0</span>
+      <span style="font-size:.82rem;color:var(--text-muted)" id="last-update">—</span>
+      <button class="topbar-btn" id="btn-pause" onclick="togglePause()">⏸ Pause</button>
+      <div class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode">
+        <span class="toggle-icon" id="theme-icon">🌙</span>
+        <div class="toggle-track"><div class="toggle-knob"></div></div>
+        <span class="toggle-icon" id="theme-icon-alt">☀️</span>
+      </div>
+      <button class="topbar-btn" onclick="resetAndReconfigure()">⚙ Config</button>
+    </div>
+  </div>
+
+  <!-- Poll Progress -->
+  <div class="poll-bar-track"><div class="poll-bar" id="poll-bar"></div></div>
+
+  <!-- Summary Cards -->
+  <div class="summary-row">
+    <div class="card cyan"><div class="card-label">Expiry</div><div class="card-value" id="s-expiry">—</div><div class="card-sub" id="s-expiry-sub"></div></div>
+    <div class="card green"><div class="card-label">PCR (OI)</div><div class="card-value" id="s-pcr">—</div><div class="card-sub">Put OI ÷ Call OI</div></div>
+    <div class="card amber"><div class="card-label">Total CE OI / PE OI</div><div class="card-value" id="s-totoi">—</div><div class="card-sub" id="s-totoi-sub"></div></div>
+    <div class="card red"><div class="card-label">Max CE OI Strike</div><div class="card-value" id="s-maxce">—</div><div class="card-sub" id="s-maxce-sub">Resistance</div></div>
+    <div class="card blue"><div class="card-label">Max PE OI Strike</div><div class="card-value" id="s-maxpe">—</div><div class="card-sub" id="s-maxpe-sub">Support</div></div>
+    <div class="card purple"><div class="card-label">NIFTY Spot / ATM</div><div class="card-value" id="s-spot">—</div><div class="card-sub" id="s-spot-sub"></div></div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend-bar">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--long-buildup);border:1px solid #00e67640"></div>Long Buildup</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--short-buildup);border:1px solid #ff525240"></div>Short Buildup</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--short-covering);border:1px solid #448aff40"></div>Short Covering</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--long-unwinding);border:1px solid #ffc10740"></div>Long Unwinding</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--new-entry);border:1px solid #b388ff40"></div>New</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--noise);border:1px solid #ffffff20"></div>Noise</div>
+  </div>
+
+  <!-- Option Chain Table -->
+  <div class="table-wrap">
+    <table class="chain-table" id="chain-table">
+      <thead>
+        <tr>
+          <th class="ce-header">Buildup</th>
+          <th class="ce-header">OI Chg</th>
+          <th class="ce-header">OI</th>
+          <th class="ce-header">Volume</th>
+          <th class="ce-header">Chg%</th>
+          <th class="ce-header">Chg</th>
+          <th class="ce-header">LTP</th>
+          <th class="strike-header">Strike</th>
+          <th class="strike-header">PCR</th>
+          <th class="pe-header">LTP</th>
+          <th class="pe-header">Chg</th>
+          <th class="pe-header">Chg%</th>
+          <th class="pe-header">Volume</th>
+          <th class="pe-header">OI</th>
+          <th class="pe-header">OI Chg</th>
+          <th class="pe-header">Buildup</th>
+        </tr>
+      </thead>
+      <tbody id="chain-body">
+        <tr><td colspan="11" class="loading-msg">Waiting for first data poll…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Error toast -->
+<div class="err-toast" id="err-toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   NIFTY OPTION CHAIN DASHBOARD — PURE VANILLA JS
+   ═══════════════════════════════════════════════ */
+
+// ── State ──
+let CONFIG = { appId: '', token: '', proxy: '', strikeCount: 20, expiryTimestamp: '' };
+let prevSnapshot = {};      // { strike: { ceOI, ceLTP, peOI, peLTP } }
+let currSnapshot = {};
+let startSnapshot = {};     // Captures first poll of session — never overwritten
+let allExpiries = [];       // [{ date: "2025-02-27", expiry: "1740614400", label: "27 Feb 2025" }, ...]
+let selectedExpiryIdx = 0;
+let pollTimer = null;
+let pollCount = 0;
+let paused = false;
+let pollIntervalMs = 3000;
+let barAnimFrame = null;
+
+// ── Utility ──
+const $ = id => document.getElementById(id);
+
+// ── Theme Toggle ──
+function toggleTheme() {
+  const html = document.documentElement;
+  const isLight = html.getAttribute('data-theme') === 'light';
+  const newTheme = isLight ? 'dark' : 'light';
+  html.setAttribute('data-theme', newTheme);
+  try { localStorage.setItem('nifty-oc-theme', newTheme); } catch(e) {}
+  updateThemeLabel(newTheme);
+}
+function updateThemeLabel(theme) {
+  const label = $('theme-mode-label');
+  if (label) label.textContent = theme === 'light' ? 'Light' : 'Dark';
+}
+// Restore saved theme on load
+(function initTheme() {
+  let saved = 'dark';
+  try { saved = localStorage.getItem('nifty-oc-theme') || 'dark'; } catch(e) {}
+  document.documentElement.setAttribute('data-theme', saved);
+  updateThemeLabel(saved);
+})();
+const fmt = n => n == null ? '—' : Number(n).toLocaleString('en-IN');
+const fmtLakh = n => n == null ? '—' : (n / 100000).toFixed(2) + ' L';
+const fmtCr = n => n == null ? '—' : (n / 10000000).toFixed(2) + ' Cr';
+function showErr(msg) {
+  const t = $('err-toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+// ── Parse Fyers date strings (DD-MM-YYYY or YYYY-MM-DD) ──
+function parseFyersDate(str) {
+  if (!str) return null;
+  let d = null;
+  // DD-MM-YYYY (Fyers format)
+  const dmy = str.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmy) {
+    d = new Date(+dmy[3], +dmy[2] - 1, +dmy[1], 12, 0, 0);
+  }
+  // YYYY-MM-DD (ISO format)
+  if (!d) {
+    const ymd = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (ymd) {
+      d = new Date(+ymd[1], +ymd[2] - 1, +ymd[3], 12, 0, 0);
+    }
+  }
+  // Fallback: let JS try
+  if (!d) {
+    d = new Date(str);
+  }
+  return (d && !isNaN(d)) ? d : null;
+}
+
+// ── Buildup Classification ──
+function classifyBuildup(deltaOI, deltaLTP, oi) {
+  if (oi === 0 && deltaOI > 0) return 'NEW';
+  if (deltaOI == null || deltaLTP == null) return 'NOISE';
+  const oiUp = deltaOI > 0, oiDown = deltaOI < 0;
+  const priceUp = deltaLTP > 0, priceDown = deltaLTP < 0;
+  if (oiUp && priceUp)    return 'LONG_BUILDUP';
+  if (oiUp && priceDown)  return 'SHORT_BUILDUP';
+  if (oiDown && priceUp)  return 'SHORT_COVERING';
+  if (oiDown && priceDown) return 'LONG_UNWINDING';
+  return 'NOISE';
+}
+function buildupLabel(code) {
+  return { LONG_BUILDUP:'Long BU', SHORT_BUILDUP:'Short BU', SHORT_COVERING:'Short Cov', LONG_UNWINDING:'Long UW', NEW:'New', NOISE:'—' }[code] || '—';
+}
+
+// ── Fyers API Fetch ──
+async function fetchOptionChain() {
+  const base = 'https://api-t1.fyers.in/data/options-chain-v3';
+  const params = new URLSearchParams({
+    symbol: 'NSE:NIFTY50-INDEX',
+    strikecount: CONFIG.strikeCount,
+    timestamp: CONFIG.expiryTimestamp || ''
+  });
+  let url = `${base}?${params}`;
+  if (CONFIG.proxy) {
+    url = CONFIG.proxy + encodeURIComponent(url);
+  }
+  const res = await fetch(url, {
+    headers: {
+      'Authorization': `${CONFIG.appId}:${CONFIG.token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── Parse Fyers Response ──
+function parseChainData(json) {
+  /*  Fyers v3 option-chain response:
+      { s:"ok", code:200, data: {
+          expiryData: [{ date:"2025-02-27", expiry:"1740614400" }],
+          optionsChain: [
+            { strike_price:24500, option_type:"CE", ltp:100, oi:50000, volume:1234, oich:500, prev_oi:49500, ... },
+            { strike_price:24500, option_type:"PE", ltp:80, oi:40000, ... },
+            ...
+          ],
+          callOi: 123456, putOi: 654321
+      }}
+      Each optionsChain item is FLAT — either CE or PE, identified by option_type.  */
+
+  if (!json || !json.data) {
+    if (json?.s === 'error' || json?.code < 0) throw new Error(json?.message || 'API error');
+    throw new Error(json?.message || 'Bad API response');
+  }
+  const data = json.data;
+  const chain = data.optionsChain || data.options_chain || [];
+
+  // ── Parse expiry date ──
+  let expiryDate = null;
+  const expEntry = data.expiryData?.[0] || data.expiry_data?.[0];
+  if (expEntry) {
+    expiryDate = parseFyersDate(expEntry.date);
+    // Fallback: expiry field might be a unix epoch string
+    if (!expiryDate && expEntry.expiry) {
+      const ts = Number(expEntry.expiry);
+      if (ts > 0) expiryDate = new Date(ts * 1000);
+    }
+  }
+
+  // ── Group flat CE/PE entries by strike ──
+  const strikeMap = {};
+  for (const item of chain) {
+    const strike = item.strike_price ?? item.strikePrice;
+    if (strike == null || strike <= 0) continue;
+    if (!strikeMap[strike]) {
+      strikeMap[strike] = {
+        strike,
+        ceOI:0, ceLTP:0, ceOIChg:0, ceOIChgP:0, ceLTPChg:0, ceLTPChgP:0, ceVol:0, cePrevOI:0,
+        peOI:0, peLTP:0, peOIChg:0, peOIChgP:0, peLTPChg:0, peLTPChgP:0, peVol:0, pePrevOI:0
+      };
+    }
+    const type = (item.option_type || item.optionType || '').toUpperCase();
+    if (type === 'CE') {
+      strikeMap[strike].ceOI     = item.oi ?? item.open_interest ?? 0;
+      strikeMap[strike].ceLTP    = item.ltp ?? item.last_price ?? 0;
+      strikeMap[strike].ceOIChg  = item.oich ?? 0;
+      strikeMap[strike].ceOIChgP = item.oichp ?? 0;
+      strikeMap[strike].ceLTPChg = item.ltpch ?? 0;
+      strikeMap[strike].ceLTPChgP= item.ltpchp ?? 0;
+      strikeMap[strike].ceVol    = item.volume ?? 0;
+      strikeMap[strike].cePrevOI = item.prev_oi ?? 0;
+    } else if (type === 'PE') {
+      strikeMap[strike].peOI     = item.oi ?? item.open_interest ?? 0;
+      strikeMap[strike].peLTP    = item.ltp ?? item.last_price ?? 0;
+      strikeMap[strike].peOIChg  = item.oich ?? 0;
+      strikeMap[strike].peOIChgP = item.oichp ?? 0;
+      strikeMap[strike].peLTPChg = item.ltpch ?? 0;
+      strikeMap[strike].peLTPChgP= item.ltpchp ?? 0;
+      strikeMap[strike].peVol    = item.volume ?? 0;
+      strikeMap[strike].pePrevOI = item.prev_oi ?? 0;
+    }
+  }
+
+  const rows = Object.values(strikeMap);
+  rows.sort((a, b) => a.strike - b.strike);
+
+  // Debug: log first response so user can inspect structure
+  if (pollCount === 0) {
+    console.log('[NIFTY OC] Raw API response:', json);
+    console.log('[NIFTY OC] Parsed rows:', rows.length, 'Expiry:', expiryDate);
+  }
+
+  return { rows, expiryDate, expiryList: data.expiryData || data.expiry_data || [] };
+}
+
+// ── Render ──
+function render(rows, expiryDate) {
+  // Compute totals
+  let totalCeOI = 0, totalPeOI = 0;
+  let maxCeOI = 0, maxCeStrike = 0, maxPeOI = 0, maxPeStrike = 0;
+  for (const r of rows) {
+    totalCeOI += r.ceOI; totalPeOI += r.peOI;
+    if (r.ceOI > maxCeOI) { maxCeOI = r.ceOI; maxCeStrike = r.strike; }
+    if (r.peOI > maxPeOI) { maxPeOI = r.peOI; maxPeStrike = r.strike; }
+  }
+  const pcr = totalCeOI > 0 ? (totalPeOI / totalCeOI) : 0;
+
+  // ATM = middle strike
+  const midStrike = rows[Math.floor(rows.length / 2)]?.strike || 0;
+
+  // Update summary cards
+  if (expiryDate && !isNaN(expiryDate)) {
+    $('s-expiry').textContent = expiryDate.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+    const diff = Math.ceil((expiryDate - new Date()) / 86400000);
+    $('s-expiry-sub').textContent = diff > 0 ? `${diff} day${diff>1?'s':''} to expiry` : 'Expiry today / passed';
+  } else {
+    $('s-expiry').textContent = 'Nearest Weekly';
+    $('s-expiry-sub').textContent = '';
+  }
+  $('s-pcr').textContent = pcr.toFixed(3);
+  $('s-pcr').style.color = pcr > 1 ? 'var(--green)' : pcr < 0.7 ? 'var(--red)' : 'var(--amber)';
+  $('s-totoi').textContent = `${fmt(totalCeOI)} / ${fmt(totalPeOI)}`;
+  $('s-totoi-sub').textContent = `CE ${fmtCr(totalCeOI)} · PE ${fmtCr(totalPeOI)}`;
+  $('s-maxce').textContent = maxCeStrike.toLocaleString('en-IN');
+  $('s-maxce-sub').textContent = `OI: ${fmt(maxCeOI)} — Resistance`;
+  $('s-maxpe').textContent = maxPeStrike.toLocaleString('en-IN');
+  $('s-maxpe-sub').textContent = `OI: ${fmt(maxPeOI)} — Support`;
+  $('s-spot').textContent = midStrike.toLocaleString('en-IN');
+  $('s-spot-sub').textContent = 'ATM Strike (approx)';
+
+  // Build table rows
+  const tbody = $('chain-body');
+  let html = '';
+
+  // Find max and min OI strikes (only among rows with OI > 0)
+  const ceOIs = rows.filter(r => r.ceOI > 0).map(r => r.ceOI);
+  const peOIs = rows.filter(r => r.peOI > 0).map(r => r.peOI);
+  const maxCeOIVal = ceOIs.length ? Math.max(...ceOIs) : -1;
+  const minCeOIVal = ceOIs.length ? Math.min(...ceOIs) : -1;
+  const maxPeOIVal = peOIs.length ? Math.max(...peOIs) : -1;
+  const minPeOIVal = peOIs.length ? Math.min(...peOIs) : -1;
+
+  for (const r of rows) {
+    // Use API-provided day changes for buildup classification
+    const ceBU = classifyBuildup(r.ceOIChg, r.ceLTPChg, r.ceOI);
+    const peBU = classifyBuildup(r.peOIChg, r.peLTPChg, r.peOI);
+
+    // Dominant buildup for row shading
+    const domBU = r.ceOI >= r.peOI ? ceBU : peBU;
+    const isATM = r.strike === midStrike;
+    const rowCls = isATM ? 'atm-row' : (domBU !== 'NOISE' && domBU !== 'NEW' ? `row-${domBU}` : '');
+
+    // Max/Min OI classes
+    const ceOICls = r.ceOI > 0 && r.ceOI === maxCeOIVal ? ' max-oi' : r.ceOI > 0 && r.ceOI === minCeOIVal ? ' min-oi' : '';
+    const peOICls = r.peOI > 0 && r.peOI === maxPeOIVal ? ' max-oi' : r.peOI > 0 && r.peOI === minPeOIVal ? ' min-oi' : '';
+
+    // PCR per strike
+    const strikePCR = r.ceOI > 0 ? (r.peOI / r.ceOI) : 0;
+    const pcrCls = strikePCR > 1 ? 'pos' : strikePCR < 0.7 ? 'neg' : 'zero';
+
+    html += `<tr class="${rowCls}">`;
+    // ── CE side: Buildup | OI Chg | OI | Volume | Chg% | Chg | LTP ──
+    html += `<td><span class="buildup ${ceBU}">${buildupLabel(ceBU)}</span></td>`;
+    html += td(signFmt(r.ceOIChg), r.ceOIChg);
+    html += tdCls(fmt(r.ceOI), 0, ceOICls);
+    html += `<td class="zero">${fmt(r.ceVol)}</td>`;
+    html += td(fmtPct(r.ceLTPChgP), r.ceLTPChgP);
+    html += td(signFmt(r.ceLTPChg, 2), r.ceLTPChg);
+    html += `<td class="ltp-cell">${r.ceLTP.toFixed(2)}</td>`;
+    // ── Strike | PCR ──
+    html += `<td class="strike-cell${isATM?' atm':''}">${r.strike.toLocaleString('en-IN')}</td>`;
+    html += `<td class="pcr-cell ${pcrCls}">${strikePCR.toFixed(2)}</td>`;
+    // ── PE side: LTP | Chg | Chg% | Volume | OI | OI Chg | Buildup ──
+    html += `<td class="ltp-cell">${r.peLTP.toFixed(2)}</td>`;
+    html += td(signFmt(r.peLTPChg, 2), r.peLTPChg);
+    html += td(fmtPct(r.peLTPChgP), r.peLTPChgP);
+    html += `<td class="zero">${fmt(r.peVol)}</td>`;
+    html += tdCls(fmt(r.peOI), 0, peOICls);
+    html += td(signFmt(r.peOIChg), r.peOIChg);
+    html += `<td><span class="buildup ${peBU}">${buildupLabel(peBU)}</span></td>`;
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  // Update meta
+  pollCount++;
+  $('poll-counter').textContent = `Polls: ${pollCount}`;
+  $('last-update').textContent = new Date().toLocaleTimeString('en-IN');
+  $('status-dot').classList.add('live');
+  $('status-text').textContent = 'Live';
+}
+
+function td(text, val) {
+  const cls = val > 0 ? 'pos' : val < 0 ? 'neg' : 'zero';
+  return `<td class="${cls}">${text}</td>`;
+}
+function tdCls(text, val, extraCls) {
+  const cls = val > 0 ? 'pos' : val < 0 ? 'neg' : 'zero';
+  return `<td class="${cls}${extraCls || ''}">${text}</td>`;
+}
+function fmtPct(n) {
+  if (n == null || n === 0) return '0.00%';
+  const sign = n > 0 ? '+' : '−';
+  return `${sign}${Math.abs(n).toFixed(2)}%`;
+}
+function signFmt(n, dec) {
+  if (n == null) return '—';
+  const abs = dec != null ? Math.abs(n).toFixed(dec) : fmt(Math.abs(n));
+  if (n > 0) return '+' + abs;
+  if (n < 0) return '−' + abs;
+  return abs;
+}
+
+// ── Poll Loop ──
+async function poll() {
+  if (paused) return;
+  try {
+    const json = await fetchOptionChain();
+    const { rows, expiryDate } = parseChainData(json);
+    render(rows, expiryDate);
+  } catch (e) {
+    console.error('Poll error:', e);
+    showErr('Fetch error: ' + e.message);
+    $('status-dot').classList.remove('live');
+    $('status-text').textContent = 'Error';
+  }
+}
+
+function startPollBar() {
+  const bar = $('poll-bar');
+  let start = performance.now();
+  function tick(now) {
+    const pct = Math.min(((now - start) / pollIntervalMs) * 100, 100);
+    bar.style.width = pct + '%';
+    if (pct < 100) barAnimFrame = requestAnimationFrame(tick);
+  }
+  if (barAnimFrame) cancelAnimationFrame(barAnimFrame);
+  start = performance.now();
+  barAnimFrame = requestAnimationFrame(tick);
+}
+
+async function pollLoop() {
+  await poll();
+  startPollBar();
+  pollTimer = setInterval(() => {
+    poll();
+    startPollBar();
+  }, pollIntervalMs);
+}
+
+// ── Controls ──
+function togglePause() {
+  paused = !paused;
+  $('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
+  $('btn-pause').classList.toggle('active', paused);
+  if (paused) {
+    $('status-dot').classList.remove('live');
+    $('status-text').textContent = 'Paused';
+  } else {
+    poll();
+  }
+}
+
+function resetAndReconfigure() {
+  clearInterval(pollTimer);
+  if (barAnimFrame) cancelAnimationFrame(barAnimFrame);
+  $('dashboard').style.display = 'none';
+  $('config-overlay').classList.remove('hidden');
+  prevSnapshot = {};
+  currSnapshot = {};
+  startSnapshot = {};
+  pollCount = 0;
+  allExpiries = [];
+  expiryMonths = {};
+  sortedMonthKeys = [];
+  // Reset stepper to step 1 (but keep filled values)
+  goToStep(1);
+}
+
+// ── Start ──
+async function startDashboard() {
+  const appId = $('cfg-appid').value.trim();
+  const token = $('cfg-token').value.trim();
+  const proxy = $('cfg-proxy').value.trim();
+  const strikes = parseInt($('cfg-strikes').value, 10);
+
+  if (!appId || !token) {
+    $('cfg-err-4').textContent = 'App ID and Access Token are required.';
+    return;
+  }
+  $('cfg-err-4').textContent = '';
+  CONFIG = { appId, token, proxy, strikeCount: strikes, expiryTimestamp: '' };
+
+  // Disable launch button while loading
+  const btnGo = $('btn-go');
+  btnGo.disabled = true;
+  btnGo.textContent = '⏳ Fetching expiries…';
+
+  try {
+    const json = await fetchOptionChain();
+    console.log('[NIFTY OC] ═══ RAW API RESPONSE ═══');
+    console.log('[NIFTY OC] Full response:', json);
+
+    const { expiryList } = parseChainData(json);
+
+    if (!expiryList || expiryList.length === 0) {
+      $('cfg-err-4').textContent = 'No expiry dates found in API response. Check console (F12).';
+      btnGo.disabled = false;
+      btnGo.textContent = '🚀 Launch Dashboard';
+      return;
+    }
+
+    // Build allExpiries
+    const nearestDateStr = expiryList[0]?.date || '';
+    allExpiries = expiryList.map((e, i) => {
+      const dateStr = e.date || '';
+      const epochStr = e.expiry || '';
+      let d = parseFyersDate(dateStr);
+      if (!d && epochStr) {
+        const ts = Number(epochStr);
+        if (ts > 0) d = new Date(ts * 1000);
+      }
+      const valid = d !== null;
+      let tag = 'weekly';
+      if (valid) {
+        const dayOfWeek = d.getDay();
+        if (dayOfWeek === 4) {
+          const nextWeek = new Date(d); nextWeek.setDate(d.getDate() + 7);
+          if (nextWeek.getMonth() !== d.getMonth()) tag = 'monthly';
+        }
+      }
+      if (dateStr === nearestDateStr) tag = 'nearest';
+      return {
+        date: dateStr, expiry: epochStr, parsed: valid ? d : null,
+        day: valid ? d.getDate() : 0,
+        weekday: valid ? d.toLocaleDateString('en-IN', { weekday:'short' }) : '',
+        label: valid ? d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', weekday:'short' }) : dateStr,
+        monthKey: valid ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : '',
+        tag, globalIdx: 0
+      };
+    });
+
+    allExpiries.sort((a, b) => {
+      if (a.parsed && b.parsed) return a.parsed - b.parsed;
+      return a.date.localeCompare(b.date);
+    });
+    allExpiries.forEach((e, i) => e.globalIdx = i);
+
+    console.log(`[NIFTY OC] Total expiries parsed: ${allExpiries.length}`);
+    console.table(allExpiries.map(e => ({ date: e.date, parsed: e.parsed?.toDateString(), monthKey: e.monthKey, tag: e.tag })));
+
+    // Group by month
+    expiryMonths = {};
+    for (const e of allExpiries) {
+      if (!e.monthKey) continue;
+      if (!expiryMonths[e.monthKey]) expiryMonths[e.monthKey] = [];
+      expiryMonths[e.monthKey].push(e);
+    }
+    sortedMonthKeys = Object.keys(expiryMonths).sort();
+
+    // Auto-select nearest expiry
+    selectedExpiryIdx = allExpiries.findIndex(e => e.tag === 'nearest');
+    if (selectedExpiryIdx < 0) selectedExpiryIdx = 0;
+
+    const chosen = allExpiries[selectedExpiryIdx];
+    CONFIG.expiryTimestamp = chosen.expiry || chosen.date || '';
+    prevSnapshot = {};
+    currSnapshot = {};
+    startSnapshot = {};
+    pollCount = 0;
+
+    // Populate topbar dropdown
+    populateExpiryDropdown();
+    $('topbar-strikes').value = String(CONFIG.strikeCount);
+
+    // Hide config, show dashboard, start polling
+    $('config-overlay').classList.add('hidden');
+    $('dashboard').style.display = 'block';
+    pollLoop();
+
+  } catch (e) {
+    $('cfg-err-4').textContent = 'Error: ' + e.message;
+    console.error('[NIFTY OC] Launch error:', e);
+    btnGo.disabled = false;
+    btnGo.textContent = '🚀 Launch Dashboard';
+  }
+}
+
+// ── Expiry Picker ──
+let expiryMonths = {};  // { "2026-03": [ {...}, ... ], "2026-04": [...] }
+let sortedMonthKeys = [];
+
+function populateExpiryDropdown() {
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const sel = $('topbar-expiry');
+  sel.innerHTML = '';
+
+  for (const monthKey of sortedMonthKeys) {
+    const entries = expiryMonths[monthKey];
+    const [y, m] = monthKey.split('-').map(Number);
+    const grp = document.createElement('optgroup');
+    grp.label = `${monthNames[m - 1]} ${y}`;
+
+    for (const e of entries) {
+      const opt = document.createElement('option');
+      opt.value = e.expiry || e.date || '';
+      opt.textContent = e.label;
+      if (e.globalIdx === selectedExpiryIdx) opt.selected = true;
+      grp.appendChild(opt);
+    }
+    sel.appendChild(grp);
+  }
+}
+
+function switchExpiry() {
+  const sel = $('topbar-expiry');
+  const newTs = sel.value;
+  const newIdx = allExpiries.findIndex(e => (e.expiry || e.date) === newTs);
+  if (newIdx < 0) return;
+
+  // Stop current polling
+  clearInterval(pollTimer);
+  if (barAnimFrame) cancelAnimationFrame(barAnimFrame);
+
+  // Update config and reset snapshots
+  CONFIG.expiryTimestamp = newTs;
+  selectedExpiryIdx = newIdx;
+  prevSnapshot = {};
+  currSnapshot = {};
+  startSnapshot = {};
+  pollCount = 0;
+
+  // Restart polling with new expiry
+  $('status-text').textContent = 'Switching…';
+  pollLoop();
+}
+
+function switchStrikes() {
+  const newCount = parseInt($('topbar-strikes').value, 10);
+  if (!newCount || newCount === CONFIG.strikeCount) return;
+
+  // Stop current polling
+  clearInterval(pollTimer);
+  if (barAnimFrame) cancelAnimationFrame(barAnimFrame);
+
+  // Update config and reset snapshots
+  CONFIG.strikeCount = newCount;
+  prevSnapshot = {};
+  currSnapshot = {};
+  startSnapshot = {};
+  pollCount = 0;
+
+  // Restart polling with new strike count
+  $('status-text').textContent = 'Switching…';
+  pollLoop();
+}
+
+// ══════════════════════════════════
+//  CONFIG STEPPER LOGIC
+// ══════════════════════════════════
+let currentStep = 1;
+let generatedToken = '';
+
+function goToStep(n) {
+  // Don't allow skipping ahead without completing prior steps
+  if (n > currentStep + 1) return;
+  currentStep = n;
+  // Update indicators
+  for (let i = 1; i <= 4; i++) {
+    const si = $('si-' + i);
+    const sp = $('sp-' + i);
+    si.classList.remove('active', 'done');
+    sp.classList.remove('active');
+    if (i === n) { si.classList.add('active'); sp.classList.add('active'); }
+    else if (i < n) { si.classList.add('done'); }
+  }
+}
+
+function completeStep1() {
+  const appId = $('cfg-appid').value.trim();
+  const secret = $('cfg-secret').value.trim();
+  if (!appId) { $('cfg-err-1').textContent = 'App ID is required.'; return; }
+  if (!secret) { $('cfg-err-1').textContent = 'Secret Key is required.'; return; }
+  $('cfg-err-1').textContent = '';
+  goToStep(2);
+}
+
+function openAuthPage() {
+  const appId = $('cfg-appid').value.trim();
+  if (!appId) { $('cfg-err-2').textContent = 'Go back and enter your App ID first.'; return; }
+  const redirectUri = 'https://trade.fyers.in/api-login/redirect-uri/index.html';
+  const url = `https://api-t1.fyers.in/api/v3/generate-authcode?client_id=${encodeURIComponent(appId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=nifty_oc_dash`;
+  window.open(url, '_blank');
+}
+
+async function completeStep2() {
+  const authCode = $('cfg-authcode').value.trim();
+  if (!authCode) { $('cfg-err-2').textContent = 'Paste the auth_code from the redirect URL.'; return; }
+  $('cfg-err-2').textContent = '';
+  goToStep(3);
+
+  // Attempt to generate access token
+  $('token-generating').style.display = 'block';
+  $('token-result').style.display = 'none';
+  $('token-error').style.display = 'none';
+
+  try {
+    const appId = $('cfg-appid').value.trim();
+    const secret = $('cfg-secret').value.trim();
+
+    // SHA-256 of "appId:secretKey"
+    const hashBuffer = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(appId + ':' + secret)
+    );
+    const appIdHash = [...new Uint8Array(hashBuffer)]
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // Call validate-authcode endpoint
+    const res = await fetch('https://api-t1.fyers.in/api/v3/validate-authcode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        appIdHash: appIdHash,
+        code: authCode,
+      }),
+    });
+    const data = await res.json();
+
+    $('token-generating').style.display = 'none';
+
+    if (data.access_token) {
+      generatedToken = data.access_token;
+      $('token-result').style.display = 'block';
+      $('token-preview').textContent = generatedToken.substring(0, 40) + '…' + generatedToken.substring(generatedToken.length - 20);
+      $('cfg-token').value = generatedToken;
+    } else {
+      $('token-error').style.display = 'block';
+      $('cfg-err-3').textContent = 'Token error: ' + (data.message || JSON.stringify(data));
+    }
+  } catch (e) {
+    $('token-generating').style.display = 'none';
+    $('token-error').style.display = 'block';
+    $('cfg-err-3').textContent = 'Request failed: ' + e.message + '. This may be a CORS issue — try pasting a token manually below.';
+  }
+}
+
+function completeStep3() {
+  const token = $('cfg-token').value.trim();
+  if (!token) {
+    $('cfg-err-3') && ($('cfg-err-3').textContent = 'Access token is required. Generate one above or paste manually.');
+    return;
+  }
+  goToStep(4);
+}
+
+// ── Demo / Fallback: generate mock data if API unreachable ──
+// (This lets you verify the UI works even without credentials)
+function generateMockData() {
+  const baseStrike = 24500;
+  const rows = [];
+  for (let i = -15; i <= 15; i++) {
+    const strike = baseStrike + i * 50;
+    const distFromATM = Math.abs(i);
+    rows.push({
+      strike,
+      ceOI:  Math.max(0, Math.floor((20 - distFromATM) * 50000 + Math.random() * 100000)),
+      ceLTP: Math.max(0.05, (15 - i) * 28 + Math.random() * 40).toFixed(2) * 1,
+      peOI:  Math.max(0, Math.floor((20 - distFromATM) * 45000 + Math.random() * 90000)),
+      peLTP: Math.max(0.05, (15 + i) * 26 + Math.random() * 35).toFixed(2) * 1,
+    });
+  }
+  // Generate mock expiries across 2 months
+  const mockExpiries = [];
+  for (let w = 0; w < 8; w++) {
+    const d = new Date(Date.now() + 86400000 * (3 + w * 7));
+    mockExpiries.push({ date: d.toISOString().slice(0,10), expiry: '' });
+  }
+  return {
+    rows,
+    expiryDate: new Date(Date.now() + 86400000 * 3),
+    expiryList: mockExpiries
+  };
+}
+
+// Allow pressing Enter in config fields to advance steps
+$('cfg-appid')?.addEventListener('keydown', e => { if (e.key === 'Enter') completeStep1(); });
+$('cfg-secret')?.addEventListener('keydown', e => { if (e.key === 'Enter') completeStep1(); });
+$('cfg-authcode')?.addEventListener('keydown', e => { if (e.key === 'Enter') completeStep2(); });
+
+/* ── Demo mode: press D on config screen to load with mock data ── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'd' && !$('config-overlay').classList.contains('hidden')) {
+    $('config-overlay').classList.add('hidden');
+
+    // Build mock expiries
+    const mock = generateMockData();
+    allExpiries = mock.expiryList.map((exp, i) => {
+      const d = parseFyersDate(exp.date);
+      const valid = !isNaN(d);
+      let tag = i === 0 ? 'nearest' : 'weekly';
+      return {
+        date: exp.date, expiry: exp.expiry,
+        parsed: valid ? d : null,
+        day: valid ? d.getDate() : 0,
+        weekday: valid ? d.toLocaleDateString('en-IN', { weekday:'short' }) : '',
+        label: valid ? d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric', weekday:'short' }) : exp.date,
+        monthKey: valid ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` : '',
+        tag, globalIdx: i
+      };
+    });
+    // Sort by date
+    allExpiries.sort((a, b) => (a.parsed || 0) - (b.parsed || 0));
+    allExpiries.forEach((ex, i) => ex.globalIdx = i);
+
+    expiryMonths = {};
+    for (const ex of allExpiries) {
+      if (!ex.monthKey) continue;
+      if (!expiryMonths[ex.monthKey]) expiryMonths[ex.monthKey] = [];
+      expiryMonths[ex.monthKey].push(ex);
+    }
+    sortedMonthKeys = Object.keys(expiryMonths).sort();
+    selectedExpiryIdx = 0;
+
+    // Populate topbar dropdown using sorted groups
+    populateExpiryDropdown();
+
+    // Override poll to use mock data and start directly
+    $('dashboard').style.display = 'block';
+    poll = async function() {
+      if (paused) return;
+      const { rows, expiryDate } = generateMockData();
+      render(rows, expiryDate);
+    };
+    pollLoop();
+  }
+});
+</script>
+</body>
+</html>
