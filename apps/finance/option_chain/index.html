@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NIFTY Option Chain — Live Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -117,6 +118,8 @@
   .chain-table thead th.ce-header{color:var(--green)}
   .chain-table thead th.pe-header{color:var(--red)}
   .chain-table thead th.strike-header{color:var(--amber)}
+  .chain-table thead th.sec-start{border-left:2px solid var(--border-bright)}
+  .chain-table tbody td.sec-start{border-left:2px solid var(--border-bright)}
   .chain-table tbody td{padding:.4rem .45rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;transition:background .3s}
   .chain-table tbody tr{background:var(--bg-table-row)}
   .chain-table tbody tr:nth-child(even){background:var(--bg-table-alt)}
@@ -127,6 +130,15 @@
   .pos{color:var(--green)}.neg{color:var(--red)}.zero{color:var(--text-muted)}
   .ltp-cell{color:var(--text-primary);font-weight:600}
   .pcr-cell{font-size:.78rem;text-align:center}
+  /* ── OI Chart popup ── */
+  .chart-icon{cursor:pointer;font-size:.82rem;opacity:.5;transition:opacity .2s}
+  .chart-icon:hover{opacity:1}
+  #oi-chart-popup{display:none;position:fixed;z-index:2000;background:var(--bg-card);border:1px solid var(--border-bright);border-radius:10px;box-shadow:0 16px 48px rgba(0,0,0,.5);padding:1rem 1.2rem;width:min(520px,92vw);max-height:360px}
+  #oi-chart-popup .popup-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;cursor:grab;user-select:none}
+  #oi-chart-popup .popup-title{font-family:var(--font-sans);font-weight:600;font-size:1rem;color:var(--cyan)}
+  #oi-chart-popup .popup-close{cursor:pointer;font-size:1.2rem;color:var(--text-muted);background:none;border:none;padding:.2rem .5rem}
+  #oi-chart-popup .popup-close:hover{color:var(--text-primary)}
+  #oi-chart-popup canvas{width:100%!important;height:240px!important}
 
   /* Max/Min OI highlights */
   td.max-oi{background:var(--red-dim);font-weight:700}
@@ -184,6 +196,12 @@
   .legend-bar{display:flex;align-items:center;gap:1rem;padding:.5rem 1.5rem;flex-wrap:wrap}
   .legend-item{display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
   .legend-swatch{width:14px;height:14px;border-radius:3px}
+
+  /* ── Broker selector ── */
+  .btn-broker{flex:1;display:flex;flex-direction:column;align-items:center;gap:.3rem;padding:1rem .8rem;background:var(--bg-primary);border:2px solid var(--border);border-radius:10px;color:var(--text-primary);cursor:pointer;transition:all .2s;font-family:var(--font-sans)}
+  .btn-broker:hover{border-color:var(--cyan);background:var(--bg-secondary)}
+  .btn-broker.selected{border-color:var(--cyan);background:var(--cyan);color:var(--bg-primary)}
+  html[data-theme="light"] .btn-broker.selected{color:#fff}
 </style>
 </head>
 <body>
@@ -192,111 +210,141 @@
 <div id="config-overlay">
   <div class="config-box" style="width:min(540px,92vw)">
     <h2>⚡ Nifty Option Chain</h2>
-    <p>Generate your Fyers access token and launch the dashboard — all from this page.</p>
+    <p>Connect your broker and launch the live option chain dashboard.</p>
 
-    <!-- Stepper indicators -->
-    <div class="stepper">
-      <div class="step-indicator active" id="si-1" onclick="goToStep(1)">① App ID</div>
-      <div class="step-indicator" id="si-2" onclick="goToStep(2)">② Auth Code</div>
-      <div class="step-indicator" id="si-3" onclick="goToStep(3)">③ Access Token</div>
-      <div class="step-indicator" id="si-4" onclick="goToStep(4)">④ Launch</div>
-    </div>
-
-    <!-- ─── STEP 1: App Credentials ─── -->
-    <div class="step-panel active" id="sp-1">
-      <div class="step-info">
-        Create an app at <a href="https://myapi.fyers.in/dashboard/" target="_blank" style="color:var(--cyan)">myapi.fyers.in/dashboard</a> if you haven't already.<br>
-        Set redirect URL to: <code style="color:var(--amber);font-size:.68rem">https://trade.fyers.in/api-login/redirect-uri/index.html</code>
+    <!-- ─── BROKER SELECTOR ─── -->
+    <div id="broker-selector">
+      <label style="margin-bottom:.5rem;display:block">Select your broker</label>
+      <div style="display:flex;gap:.8rem;margin-bottom:1.2rem">
+        <button class="btn-broker" id="btn-fyers" onclick="selectBroker('fyers')">
+          <span style="font-size:1.3rem">📊</span>
+          <strong>Fyers</strong>
+          <span style="font-size:.72rem;color:var(--text-muted)">OAuth flow</span>
+        </button>
+        <button class="btn-broker" id="btn-dhan" onclick="selectBroker('dhan')">
+          <span style="font-size:1.3rem">🔗</span>
+          <strong>Dhan</strong>
+          <span style="font-size:.72rem;color:var(--text-muted)">Token based</span>
+        </button>
       </div>
-
-      <label>App ID (Client ID)</label>
-      <input id="cfg-appid" placeholder="e.g. L9NY305RTW-100" autocomplete="off">
-
-      <label>Secret Key</label>
-      <input id="cfg-secret" type="password" placeholder="Your app's Secret Key" autocomplete="off">
-      <div class="hint">Found in your app details on the Fyers API dashboard.</div>
-
-      <div class="btn-row">
-        <button class="btn-step primary" onclick="completeStep1()">Next →</button>
-      </div>
-      <div class="config-err" id="cfg-err-1"></div>
-    </div>
-
-    <!-- ─── STEP 2: Get Auth Code ─── -->
-    <div class="step-panel" id="sp-2">
-      <div class="step-info">
-        Click the button below to open the Fyers login page. Log in with your phone, OTP, and PIN.<br>
-        After login, you'll be redirected — <strong>copy the <code>auth_code</code> from the URL bar</strong>.
-      </div>
-
-      <div class="btn-row">
-        <button class="btn-step primary" onclick="openAuthPage()">🔐 Open Fyers Login</button>
-      </div>
-
-      <label style="margin-top:1.2rem">Paste the auth_code here</label>
-      <input id="cfg-authcode" placeholder="eyJhbGci...XXXXX (from the redirect URL)" autocomplete="off">
-      <div class="hint">From the URL: <code>...?auth_code=<strong style="color:var(--amber)">THIS_PART</strong>&state=...</code></div>
-
-      <div class="btn-row">
-        <button class="btn-step" onclick="goToStep(1)">← Back</button>
-        <button class="btn-step primary" onclick="completeStep2()">Generate Token →</button>
-      </div>
-      <div class="config-err" id="cfg-err-2"></div>
-    </div>
-
-    <!-- ─── STEP 3: Access Token Generated ─── -->
-    <div class="step-panel" id="sp-3">
-      <div id="token-generating" style="display:none">
-        <div class="step-info">⏳ Generating access token… please wait.</div>
-      </div>
-      <div id="token-result" style="display:none">
-        <div class="step-success">✅ Access token generated successfully!</div>
-        <div class="token-display" id="token-preview"></div>
-        <div class="hint" style="margin-top:.4rem">This token is valid for 24 hours. It's auto-filled below.</div>
-      </div>
-      <div id="token-error" style="display:none">
-        <div class="config-err" id="cfg-err-3"></div>
-      </div>
-
-      <div class="or-divider">or paste a token manually</div>
-
-      <label>Access Token</label>
-      <input id="cfg-token" type="password" placeholder="Paste access_token if you already have one" autocomplete="off">
-
-      <div class="btn-row">
-        <button class="btn-step" onclick="goToStep(2)">← Back</button>
-        <button class="btn-step primary" onclick="completeStep3()">Next →</button>
-      </div>
-    </div>
-
-    <!-- ─── STEP 4: Final Settings & Launch ─── -->
-    <div class="step-panel" id="sp-4">
-      <div class="step-success" id="token-ready-msg">✅ Token ready — configure remaining settings and launch.</div>
-
-      <label>CORS Proxy (optional)</label>
-      <input id="cfg-proxy" placeholder="https://corsproxy.io/?url=" autocomplete="off">
-      <div class="hint">Required if Fyers blocks browser calls. Try <code>https://corsproxy.io/?url=</code></div>
-
-      <label>Strike range (each side of ATM)</label>
-      <select id="cfg-strikes">
-        <option value="5">5 strikes</option>
-        <option value="10">10 strikes</option>
-        <option value="15">15 strikes</option>
-        <option value="20" selected>20 strikes</option>
-        <option value="25">25 strikes</option>
-        <option value="30">30 strikes</option>
-      </select>
-
-      <div class="config-err" id="cfg-err-4"></div>
-      <button class="btn-connect" id="btn-go" onclick="startDashboard()" style="margin-top:1.2rem">🚀 Launch Dashboard</button>
-
-      <div style="text-align:center;margin-top:1rem">
+      <div style="text-align:center">
         <span class="theme-toggle" onclick="toggleTheme()" style="display:inline-flex;cursor:pointer">
           <span class="toggle-icon">🌙</span>
           <div class="toggle-track"><div class="toggle-knob"></div></div>
           <span class="toggle-icon">☀️</span>
           <span class="theme-toggle-label" style="margin-left:.3rem" id="theme-mode-label">Dark</span>
         </span>
+      </div>
+    </div>
+
+    <!-- ═══════ FYERS CONFIG ═══════ -->
+    <div id="fyers-config" style="display:none">
+      <!-- Stepper indicators -->
+      <div class="stepper">
+        <div class="step-indicator active" id="si-1" onclick="goToStep(1)">① App ID</div>
+        <div class="step-indicator" id="si-2" onclick="goToStep(2)">② Auth Code</div>
+        <div class="step-indicator" id="si-3" onclick="goToStep(3)">③ Access Token</div>
+        <div class="step-indicator" id="si-4" onclick="goToStep(4)">④ Launch</div>
+      </div>
+
+      <div class="step-panel active" id="sp-1">
+        <div class="step-info">
+          Create an app at <a href="https://myapi.fyers.in/dashboard/" target="_blank" style="color:var(--cyan)">myapi.fyers.in/dashboard</a> if you haven't already.<br>
+          Set redirect URL to: <code style="color:var(--amber);font-size:.68rem">https://trade.fyers.in/api-login/redirect-uri/index.html</code>
+        </div>
+        <label>App ID (Client ID)</label>
+        <input id="cfg-appid" placeholder="e.g. L9NY305RTW-100" autocomplete="off">
+        <label>Secret Key</label>
+        <input id="cfg-secret" type="password" placeholder="Your app's Secret Key" autocomplete="off">
+        <div class="hint">Found in your app details on the Fyers API dashboard.</div>
+        <div class="btn-row">
+          <button class="btn-step" onclick="showBrokerSelector()">← Back</button>
+          <button class="btn-step primary" onclick="completeStep1()">Next →</button>
+        </div>
+        <div class="config-err" id="cfg-err-1"></div>
+      </div>
+
+      <div class="step-panel" id="sp-2">
+        <div class="step-info">
+          Click the button below to open the Fyers login page. Log in with your phone, OTP, and PIN.<br>
+          After login, you'll be redirected — <strong>copy the <code>auth_code</code> from the URL bar</strong>.
+        </div>
+        <div class="btn-row">
+          <button class="btn-step primary" onclick="openAuthPage()">🔐 Open Fyers Login</button>
+        </div>
+        <label style="margin-top:1.2rem">Paste the auth_code here</label>
+        <input id="cfg-authcode" placeholder="eyJhbGci...XXXXX (from the redirect URL)" autocomplete="off">
+        <div class="hint">From the URL: <code>...?auth_code=<strong style="color:var(--amber)">THIS_PART</strong>&state=...</code></div>
+        <div class="btn-row">
+          <button class="btn-step" onclick="goToStep(1)">← Back</button>
+          <button class="btn-step primary" onclick="completeStep2()">Generate Token →</button>
+        </div>
+        <div class="config-err" id="cfg-err-2"></div>
+      </div>
+
+      <div class="step-panel" id="sp-3">
+        <div id="token-generating" style="display:none">
+          <div class="step-info">⏳ Generating access token… please wait.</div>
+        </div>
+        <div id="token-result" style="display:none">
+          <div class="step-success">✅ Access token generated successfully!</div>
+          <div class="token-display" id="token-preview"></div>
+          <div class="hint" style="margin-top:.4rem">This token is valid for 24 hours. It's auto-filled below.</div>
+        </div>
+        <div id="token-error" style="display:none">
+          <div class="config-err" id="cfg-err-3"></div>
+        </div>
+        <div class="or-divider">or paste a token manually</div>
+        <label>Access Token</label>
+        <input id="cfg-token" type="password" placeholder="Paste access_token if you already have one" autocomplete="off">
+        <div class="btn-row">
+          <button class="btn-step" onclick="goToStep(2)">← Back</button>
+          <button class="btn-step primary" onclick="completeStep3()">Next →</button>
+        </div>
+      </div>
+
+      <div class="step-panel" id="sp-4">
+        <div class="step-success" id="token-ready-msg">✅ Token ready — configure remaining settings and launch.</div>
+        <label>CORS Proxy (optional)</label>
+        <input id="cfg-proxy" placeholder="https://corsproxy.io/?url=" autocomplete="off">
+        <div class="hint">Required if Fyers blocks browser calls. Try <code>https://corsproxy.io/?url=</code></div>
+        <label>Strike range (each side of ATM)</label>
+        <select id="cfg-strikes">
+          <option value="5">5 strikes</option>
+          <option value="10">10 strikes</option>
+          <option value="15">15 strikes</option>
+          <option value="20" selected>20 strikes</option>
+          <option value="25">25 strikes</option>
+          <option value="30">30 strikes</option>
+        </select>
+        <div class="config-err" id="cfg-err-4"></div>
+        <button class="btn-connect" id="btn-go-fyers" onclick="startDashboard()" style="margin-top:1.2rem">🚀 Launch Dashboard</button>
+      </div>
+    </div>
+
+    <!-- ═══════ DHAN CONFIG ═══════ -->
+    <div id="dhan-config" style="display:none">
+      <div class="step-info">
+        Get your API credentials from <a href="https://web.dhan.co" target="_blank" style="color:var(--cyan)">Dhan Web</a> → Profile → DhanHQ Trading APIs.<br>
+        Generate an access token (valid 24 hours) from the API dashboard.
+      </div>
+
+      <label>Client ID</label>
+      <input id="dhan-clientid" placeholder="e.g. 1000000001" autocomplete="off">
+      <div class="hint">Your Dhan numeric client ID.</div>
+
+      <label>Access Token</label>
+      <input id="dhan-token" type="password" placeholder="Paste your Dhan JWT access token" autocomplete="off">
+      <div class="hint">Generate from Dhan Web → Profile → DhanHQ Trading APIs.</div>
+
+      <label>CORS Proxy (optional)</label>
+      <input id="dhan-proxy" placeholder="https://corsproxy.io/?url=" autocomplete="off">
+      <div class="hint">Required for browser-based calls. Try <code>https://corsproxy.io/?url=</code></div>
+
+      <div class="config-err" id="dhan-err"></div>
+      <div class="btn-row" style="margin-top:1rem">
+        <button class="btn-step" onclick="showBrokerSelector()">← Back</button>
+        <button class="btn-connect" id="btn-go-dhan" onclick="startDashboard()">🚀 Launch Dashboard</button>
       </div>
     </div>
   </div>
@@ -309,6 +357,7 @@
   <div class="topbar">
     <div class="topbar-left">
       <div class="topbar-logo">NIFTY<span>.optionchain</span></div>
+      <span id="broker-badge" style="font-size:.65rem;padding:2px 8px;border-radius:4px;background:var(--cyan);color:var(--bg-primary);font-weight:600;letter-spacing:.05em;text-transform:uppercase"></span>
       <div class="status-badge"><span class="status-dot" id="status-dot"></span><span id="status-text">Connecting…</span></div>
       <select class="topbar-select" id="topbar-expiry" onchange="switchExpiry()" title="Switch expiry">
         <option value="">—</option>
@@ -370,9 +419,12 @@
           <th class="ce-header">Chg%</th>
           <th class="ce-header">Chg</th>
           <th class="ce-header">LTP</th>
-          <th class="strike-header">Strike</th>
+          <th class="strike-header sec-start">Strike</th>
+          <th class="strike-header" style="text-align:center">📈</th>
+          <th class="strike-header">Straddle</th>
+          <th class="strike-header">Str Chg</th>
           <th class="strike-header">PCR</th>
-          <th class="pe-header">LTP</th>
+          <th class="pe-header sec-start">LTP</th>
           <th class="pe-header">Chg</th>
           <th class="pe-header">Chg%</th>
           <th class="pe-header">Volume</th>
@@ -382,10 +434,19 @@
         </tr>
       </thead>
       <tbody id="chain-body">
-        <tr><td colspan="11" class="loading-msg">Waiting for first data poll…</td></tr>
+        <tr><td colspan="19" class="loading-msg">Waiting for first data poll…</td></tr>
       </tbody>
     </table>
   </div>
+</div>
+
+<!-- OI Chart Popup -->
+<div id="oi-chart-popup">
+  <div class="popup-header">
+    <span class="popup-title" id="chart-title">Strike 24500 — OI History</span>
+    <button class="popup-close" onclick="closeOIChart()">✕</button>
+  </div>
+  <canvas id="oi-chart-canvas"></canvas>
 </div>
 
 <!-- Error toast -->
@@ -397,10 +458,31 @@
    ═══════════════════════════════════════════════ */
 
 // ── State ──
-let CONFIG = { appId: '', token: '', proxy: '', strikeCount: 20, expiryTimestamp: '' };
-let prevSnapshot = {};      // { strike: { ceOI, ceLTP, peOI, peLTP } }
+let CONFIG = { broker: '', appId: '', token: '', proxy: '', strikeCount: 20, expiryTimestamp: '', clientId: '' };
+
+function selectBroker(broker) {
+  CONFIG.broker = broker;
+  $('broker-selector').style.display = 'none';
+  if (broker === 'fyers') {
+    $('fyers-config').style.display = 'block';
+    $('dhan-config').style.display = 'none';
+  } else {
+    $('fyers-config').style.display = 'none';
+    $('dhan-config').style.display = 'block';
+  }
+}
+
+function showBrokerSelector() {
+  $('broker-selector').style.display = 'block';
+  $('fyers-config').style.display = 'none';
+  $('dhan-config').style.display = 'none';
+}
+let prevSnapshot = {};      // { strike: { ceOI, peOI } } — previous poll
 let currSnapshot = {};
-let startSnapshot = {};     // Captures first poll of session — never overwritten
+let startSnapshot = {};
+let oiHistory = {};         // { strike: [ { t, ceOI, peOI }, ... ] } — full session history
+let activeChartStrike = null;  // strike currently shown in popup
+let oiChartInstance = null;    // Chart.js instance
 let allExpiries = [];       // [{ date: "2025-02-27", expiry: "1740614400", label: "27 Feb 2025" }, ...]
 let selectedExpiryIdx = 0;
 let pollTimer = null;
@@ -480,7 +562,20 @@ function buildupLabel(code) {
 }
 
 // ── Fyers API Fetch ──
+// ══════════════════════════════════
+//  UNIFIED API LAYER
+// ══════════════════════════════════
 async function fetchOptionChain() {
+  if (CONFIG.broker === 'dhan') return fetchDhan();
+  return fetchFyers();
+}
+function parseChainData(json) {
+  if (CONFIG.broker === 'dhan') return parseDhanData(json);
+  return parseFyersData(json);
+}
+
+// ── Fyers API ──
+async function fetchFyers() {
   const base = 'https://api-t1.fyers.in/data/options-chain-v3';
   const params = new URLSearchParams({
     symbol: 'NSE:NIFTY50-INDEX',
@@ -502,7 +597,7 @@ async function fetchOptionChain() {
 }
 
 // ── Parse Fyers Response ──
-function parseChainData(json) {
+function parseFyersData(json) {
   /*  Fyers v3 option-chain response:
       { s:"ok", code:200, data: {
           expiryData: [{ date:"2025-02-27", expiry:"1740614400" }],
@@ -580,8 +675,155 @@ function parseChainData(json) {
   return { rows, expiryDate, expiryList: data.expiryData || data.expiry_data || [] };
 }
 
+// ── Dhan API ──
+async function fetchDhanExpiries() {
+  let url = 'https://api.dhan.co/v2/optionchain/expirylist';
+  const body = { UnderlyingScrip: 13, UnderlyingSeg: 'IDX_I' };
+  if (CONFIG.proxy) {
+    url = CONFIG.proxy + encodeURIComponent(url);
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'access-token': CONFIG.token,
+      'client-id': CONFIG.clientId
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function fetchDhan() {
+  let url = 'https://api.dhan.co/v2/optionchain';
+  const body = {
+    UnderlyingScrip: 13,
+    UnderlyingSeg: 'IDX_I',
+    Expiry: CONFIG.expiryTimestamp || ''
+  };
+  if (CONFIG.proxy) {
+    url = CONFIG.proxy + encodeURIComponent(url);
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'access-token': CONFIG.token,
+      'client-id': CONFIG.clientId
+    },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function parseDhanData(json) {
+  /*  Dhan v2 option-chain response:
+      { data: {
+          last_price: 25642.8,
+          oc: {
+            "25650.000000": {
+              ce: { last_price, oi, volume, previous_oi, previous_close_price, average_price, greeks:{delta,theta,gamma,vega}, implied_volatility, ... },
+              pe: { ... }
+            }
+          }
+      }, status: "success" }
+  */
+  if (!json || json.status !== 'success' || !json.data) {
+    throw new Error(json?.message || json?.remarks || 'Bad Dhan API response');
+  }
+  const data = json.data;
+  const oc = data.oc || {};
+
+  const rows = [];
+  for (const [strikeStr, sides] of Object.entries(oc)) {
+    const strike = parseFloat(strikeStr);
+    if (!strike || strike <= 0) continue;
+
+    const ce = sides.ce || {};
+    const pe = sides.pe || {};
+
+    const cePrevClose = ce.previous_close_price || 0;
+    const pePrevClose = pe.previous_close_price || 0;
+    const ceLTP = ce.last_price || 0;
+    const peLTP = pe.last_price || 0;
+    const ceLTPChg = cePrevClose > 0 ? ceLTP - cePrevClose : 0;
+    const peLTPChg = pePrevClose > 0 ? peLTP - pePrevClose : 0;
+    const ceLTPChgP = cePrevClose > 0 ? (ceLTPChg / cePrevClose * 100) : 0;
+    const peLTPChgP = pePrevClose > 0 ? (peLTPChg / pePrevClose * 100) : 0;
+
+    rows.push({
+      strike,
+      ceOI: ce.oi || 0,
+      ceLTP,
+      ceOIChg: (ce.oi || 0) - (ce.previous_oi || 0),
+      ceOIChgP: ce.previous_oi > 0 ? (((ce.oi || 0) - ce.previous_oi) / ce.previous_oi * 100) : 0,
+      ceLTPChg,
+      ceLTPChgP,
+      ceVol: ce.volume || 0,
+      cePrevOI: ce.previous_oi || 0,
+
+      peOI: pe.oi || 0,
+      peLTP,
+      peOIChg: (pe.oi || 0) - (pe.previous_oi || 0),
+      peOIChgP: pe.previous_oi > 0 ? (((pe.oi || 0) - pe.previous_oi) / pe.previous_oi * 100) : 0,
+      peLTPChg,
+      peLTPChgP,
+      peVol: pe.volume || 0,
+      pePrevOI: pe.previous_oi || 0,
+
+      // Dhan extras: greeks, IV, average_price (VWAP)
+      ceIV: ce.implied_volatility || 0,
+      peIV: pe.implied_volatility || 0,
+      ceDelta: ce.greeks?.delta || 0,
+      peDelta: pe.greeks?.delta || 0,
+    });
+  }
+
+  rows.sort((a, b) => a.strike - b.strike);
+
+  // Dhan returns YYYY-MM-DD expiry in CONFIG.expiryTimestamp
+  let expiryDate = null;
+  if (CONFIG.expiryTimestamp) {
+    const parts = CONFIG.expiryTimestamp.split('-');
+    if (parts.length === 3) {
+      expiryDate = new Date(+parts[0], +parts[1] - 1, +parts[2], 12, 0, 0);
+    }
+  }
+
+  if (pollCount === 0) {
+    console.log('[NIFTY OC] Dhan raw response:', json);
+    console.log('[NIFTY OC] Dhan parsed rows:', rows.length);
+  }
+
+  return { rows, expiryDate, expiryList: [] };
+}
+
 // ── Render ──
 function render(rows, expiryDate) {
+  // Filter to strike range around ATM (Dhan returns all, Fyers server-side filtered)
+  if (rows.length > CONFIG.strikeCount * 2 + 1) {
+    const mid = Math.floor(rows.length / 2);
+    const half = CONFIG.strikeCount;
+    const start = Math.max(0, mid - half);
+    const end = Math.min(rows.length, mid + half + 1);
+    rows = rows.slice(start, end);
+  }
+
+  // ── Accumulate OI history for charts ──
+  const now = new Date();
+  const timeLabel = now.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  for (const r of rows) {
+    if (!oiHistory[r.strike]) oiHistory[r.strike] = [];
+    oiHistory[r.strike].push({ t: timeLabel, ceOI: r.ceOI, peOI: r.peOI });
+  }
+
+  // Update live chart if popup is open
+  if (activeChartStrike && oiHistory[activeChartStrike]) {
+    updateOIChart(activeChartStrike);
+  }
+
   // Compute totals
   let totalCeOI = 0, totalPeOI = 0;
   let maxCeOI = 0, maxCeStrike = 0, maxPeOI = 0, maxPeStrike = 0;
@@ -654,11 +896,16 @@ function render(rows, expiryDate) {
     html += td(fmtPct(r.ceLTPChgP), r.ceLTPChgP);
     html += td(signFmt(r.ceLTPChg, 2), r.ceLTPChg);
     html += `<td class="ltp-cell">${r.ceLTP.toFixed(2)}</td>`;
-    // ── Strike | PCR ──
-    html += `<td class="strike-cell${isATM?' atm':''}">${r.strike.toLocaleString('en-IN')}</td>`;
+    // ── Strike | Chart | Straddle | Straddle Chg | PCR ──
+    html += `<td class="strike-cell sec-start${isATM?' atm':''}">${r.strike.toLocaleString('en-IN')}</td>`;
+    html += `<td style="text-align:center"><span class="chart-icon" onclick="openOIChart(${r.strike}, event)">📈</span></td>`;
+    const straddle = r.ceLTP + r.peLTP;
+    const straddleChg = r.ceLTPChg + r.peLTPChg;
+    html += `<td class="ltp-cell">${straddle.toFixed(2)}</td>`;
+    html += td(signFmt(straddleChg, 2), straddleChg);
     html += `<td class="pcr-cell ${pcrCls}">${strikePCR.toFixed(2)}</td>`;
     // ── PE side: LTP | Chg | Chg% | Volume | OI | OI Chg | Buildup ──
-    html += `<td class="ltp-cell">${r.peLTP.toFixed(2)}</td>`;
+    html += `<td class="ltp-cell sec-start">${r.peLTP.toFixed(2)}</td>`;
     html += td(signFmt(r.peLTPChg, 2), r.peLTPChg);
     html += td(fmtPct(r.peLTPChgP), r.peLTPChgP);
     html += `<td class="zero">${fmt(r.peVol)}</td>`;
@@ -756,54 +1003,86 @@ function resetAndReconfigure() {
   prevSnapshot = {};
   currSnapshot = {};
   startSnapshot = {};
+  oiHistory = {}; activeChartStrike = null; if (oiChartInstance) { oiChartInstance.destroy(); oiChartInstance = null; }
   pollCount = 0;
   allExpiries = [];
   expiryMonths = {};
   sortedMonthKeys = [];
-  // Reset stepper to step 1 (but keep filled values)
-  goToStep(1);
+  showBrokerSelector();
 }
 
 // ── Start ──
 async function startDashboard() {
-  const appId = $('cfg-appid').value.trim();
-  const token = $('cfg-token').value.trim();
-  const proxy = $('cfg-proxy').value.trim();
-  const strikes = parseInt($('cfg-strikes').value, 10);
+  const broker = CONFIG.broker;
+  let errEl, btnGo;
 
-  if (!appId || !token) {
-    $('cfg-err-4').textContent = 'App ID and Access Token are required.';
-    return;
+  if (broker === 'dhan') {
+    // ── Dhan config ──
+    const clientId = $('dhan-clientid').value.trim();
+    const token = $('dhan-token').value.trim();
+    const proxy = $('dhan-proxy').value.trim();
+    errEl = $('dhan-err');
+    btnGo = $('btn-go-dhan');
+
+    if (!clientId || !token) { errEl.textContent = 'Client ID and Access Token are required.'; return; }
+    errEl.textContent = '';
+    CONFIG = { ...CONFIG, clientId, token, proxy, strikeCount: 20, expiryTimestamp: '' };
+  } else {
+    // ── Fyers config ──
+    const appId = $('cfg-appid').value.trim();
+    const token = $('cfg-token').value.trim();
+    const proxy = $('cfg-proxy').value.trim();
+    const strikes = parseInt($('cfg-strikes').value, 10);
+    errEl = $('cfg-err-4');
+    btnGo = $('btn-go-fyers');
+
+    if (!appId || !token) { errEl.textContent = 'App ID and Access Token are required.'; return; }
+    errEl.textContent = '';
+    CONFIG = { ...CONFIG, appId, token, proxy, strikeCount: strikes, expiryTimestamp: '' };
   }
-  $('cfg-err-4').textContent = '';
-  CONFIG = { appId, token, proxy, strikeCount: strikes, expiryTimestamp: '' };
 
-  // Disable launch button while loading
-  const btnGo = $('btn-go');
   btnGo.disabled = true;
   btnGo.textContent = '⏳ Fetching expiries…';
 
   try {
-    const json = await fetchOptionChain();
-    console.log('[NIFTY OC] ═══ RAW API RESPONSE ═══');
-    console.log('[NIFTY OC] Full response:', json);
+    let expiryList;
 
-    const { expiryList } = parseChainData(json);
+    if (broker === 'dhan') {
+      // Dhan: fetch expiry list first (separate endpoint)
+      const expJson = await fetchDhanExpiries();
+      console.log('[NIFTY OC] Dhan expiry list:', expJson);
+      // Returns { data: ["2026-03-05","2026-03-12",...], status:"success" }
+      expiryList = (expJson.data || []).map(dateStr => ({ date: dateStr, expiry: dateStr }));
+    } else {
+      // Fyers: expiry list comes with the option chain response
+      const json = await fetchOptionChain();
+      console.log('[NIFTY OC] ═══ RAW API RESPONSE ═══');
+      console.log('[NIFTY OC] Full response:', json);
+      const parsed = parseFyersData(json);
+      expiryList = parsed.expiryList;
+    }
 
     if (!expiryList || expiryList.length === 0) {
-      $('cfg-err-4').textContent = 'No expiry dates found in API response. Check console (F12).';
+      errEl.textContent = 'No expiry dates found. Check console (F12).';
       btnGo.disabled = false;
       btnGo.textContent = '🚀 Launch Dashboard';
       return;
     }
 
-    // Build allExpiries
+    // Build allExpiries (unified for both brokers)
     const nearestDateStr = expiryList[0]?.date || '';
     allExpiries = expiryList.map((e, i) => {
       const dateStr = e.date || '';
       const epochStr = e.expiry || '';
-      let d = parseFyersDate(dateStr);
-      if (!d && epochStr) {
+      // Dhan uses YYYY-MM-DD, Fyers uses DD-MM-YYYY
+      let d = null;
+      if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [y, m, dd] = dateStr.split('-').map(Number);
+        d = new Date(y, m - 1, dd, 12, 0, 0);
+      } else {
+        d = parseFyersDate(dateStr);
+      }
+      if (!d && epochStr && !isNaN(Number(epochStr))) {
         const ts = Number(epochStr);
         if (ts > 0) d = new Date(ts * 1000);
       }
@@ -816,7 +1095,8 @@ async function startDashboard() {
           if (nextWeek.getMonth() !== d.getMonth()) tag = 'monthly';
         }
       }
-      if (dateStr === nearestDateStr) tag = 'nearest';
+      // First expiry is nearest for Fyers; for Dhan find closest future date
+      if (i === 0 && broker === 'fyers' && dateStr === nearestDateStr) tag = 'nearest';
       return {
         date: dateStr, expiry: epochStr, parsed: valid ? d : null,
         day: valid ? d.getDate() : 0,
@@ -833,8 +1113,15 @@ async function startDashboard() {
     });
     allExpiries.forEach((e, i) => e.globalIdx = i);
 
+    // For Dhan, find nearest future expiry
+    if (broker === 'dhan') {
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const nearIdx = allExpiries.findIndex(e => e.parsed && e.parsed >= today);
+      if (nearIdx >= 0) allExpiries[nearIdx].tag = 'nearest';
+    }
+
     console.log(`[NIFTY OC] Total expiries parsed: ${allExpiries.length}`);
-    console.table(allExpiries.map(e => ({ date: e.date, parsed: e.parsed?.toDateString(), monthKey: e.monthKey, tag: e.tag })));
 
     // Group by month
     expiryMonths = {};
@@ -850,23 +1137,28 @@ async function startDashboard() {
     if (selectedExpiryIdx < 0) selectedExpiryIdx = 0;
 
     const chosen = allExpiries[selectedExpiryIdx];
-    CONFIG.expiryTimestamp = chosen.expiry || chosen.date || '';
+    // Dhan uses YYYY-MM-DD date string; Fyers uses epoch timestamp
+    CONFIG.expiryTimestamp = (broker === 'dhan') ? (chosen.date || '') : (chosen.expiry || chosen.date || '');
     prevSnapshot = {};
     currSnapshot = {};
     startSnapshot = {};
+    oiHistory = {}; activeChartStrike = null; if (oiChartInstance) { oiChartInstance.destroy(); oiChartInstance = null; }
     pollCount = 0;
 
     // Populate topbar dropdown
     populateExpiryDropdown();
     $('topbar-strikes').value = String(CONFIG.strikeCount);
+    // Show/hide strikes dropdown (visible for both)
+    $('topbar-strikes').style.display = '';
 
     // Hide config, show dashboard, start polling
     $('config-overlay').classList.add('hidden');
     $('dashboard').style.display = 'block';
+    $('broker-badge').textContent = broker === 'dhan' ? 'Dhan' : 'Fyers';
     pollLoop();
 
   } catch (e) {
-    $('cfg-err-4').textContent = 'Error: ' + e.message;
+    errEl.textContent = 'Error: ' + e.message;
     console.error('[NIFTY OC] Launch error:', e);
     btnGo.disabled = false;
     btnGo.textContent = '🚀 Launch Dashboard';
@@ -915,6 +1207,7 @@ function switchExpiry() {
   prevSnapshot = {};
   currSnapshot = {};
   startSnapshot = {};
+  oiHistory = {}; activeChartStrike = null; if (oiChartInstance) { oiChartInstance.destroy(); oiChartInstance = null; }
   pollCount = 0;
 
   // Restart polling with new expiry
@@ -935,6 +1228,7 @@ function switchStrikes() {
   prevSnapshot = {};
   currSnapshot = {};
   startSnapshot = {};
+  oiHistory = {}; activeChartStrike = null; if (oiChartInstance) { oiChartInstance.destroy(); oiChartInstance = null; }
   pollCount = 0;
 
   // Restart polling with new strike count
@@ -1123,6 +1417,187 @@ document.addEventListener('keydown', e => {
     pollLoop();
   }
 });
+
+// ══════════════════════════════════
+//  OI CHART POPUP
+// ══════════════════════════════════
+function openOIChart(strike, event) {
+  event.stopPropagation();
+  const popup = $('oi-chart-popup');
+  activeChartStrike = strike;
+
+  // Position popup near click, but keep within viewport
+  const rect = popup.getBoundingClientRect();
+  const x = Math.min(event.clientX - 100, window.innerWidth - 540);
+  const y = Math.min(event.clientY + 20, window.innerHeight - 380);
+  popup.style.left = Math.max(10, x) + 'px';
+  popup.style.top = Math.max(10, y) + 'px';
+  popup.style.display = 'block';
+
+  $('chart-title').textContent = `Strike ${strike.toLocaleString('en-IN')} — OI History`;
+
+  // Build or update chart
+  updateOIChart(strike);
+}
+
+function closeOIChart() {
+  $('oi-chart-popup').style.display = 'none';
+  activeChartStrike = null;
+  if (oiChartInstance) {
+    oiChartInstance.destroy();
+    oiChartInstance = null;
+  }
+}
+
+function updateOIChart(strike) {
+  const hist = oiHistory[strike];
+  if (!hist || hist.length === 0) return;
+
+  const labels = hist.map(h => h.t);
+  const ceData = hist.map(h => h.ceOI);
+  const peData = hist.map(h => h.peOI);
+
+  const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+  const gridColor = isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)';
+  const textColor = isDark ? '#8896a8' : '#666';
+
+  if (oiChartInstance) {
+    // Update existing chart data
+    oiChartInstance.data.labels = labels;
+    oiChartInstance.data.datasets[0].data = ceData;
+    oiChartInstance.data.datasets[1].data = peData;
+    oiChartInstance.update('none');  // no animation for live updates
+    return;
+  }
+
+  // Create new chart
+  const ctx = $('oi-chart-canvas').getContext('2d');
+  oiChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'CE OI',
+          data: ceData,
+          borderColor: '#00e676',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0,
+          fill: false
+        },
+        {
+          label: 'PE OI',
+          data: peData,
+          borderColor: '#ff5252',
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0,
+          fill: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: { color: textColor, font: { family: 'DM Sans', size: 11 }, boxWidth: 12, padding: 8 }
+        },
+        tooltip: {
+          backgroundColor: isDark ? '#1a2332' : '#fff',
+          titleColor: isDark ? '#e2e8f0' : '#333',
+          bodyColor: isDark ? '#8896a8' : '#666',
+          borderColor: isDark ? '#2a3a52' : '#ddd',
+          borderWidth: 1,
+          callbacks: {
+            label: function(ctx) {
+              return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('en-IN');
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: textColor,
+            font: { family: 'IBM Plex Mono', size: 9 },
+            maxTicksLimit: 10,
+            maxRotation: 0
+          },
+          grid: { color: gridColor }
+        },
+        y: {
+          ticks: {
+            color: textColor,
+            font: { family: 'IBM Plex Mono', size: 10 },
+            callback: v => v >= 100000 ? (v / 100000).toFixed(1) + 'L' : v.toLocaleString('en-IN')
+          },
+          grid: { color: gridColor }
+        }
+      }
+    }
+  });
+}
+
+// Close popup on outside click
+document.addEventListener('click', function(e) {
+  const popup = $('oi-chart-popup');
+  if (popup.style.display === 'block' && !popup.contains(e.target) && !e.target.classList.contains('chart-icon')) {
+    closeOIChart();
+  }
+});
+
+// ── Drag-to-move popup ──
+(function() {
+  const popup = document.getElementById('oi-chart-popup');
+  const header = popup.querySelector('.popup-header');
+  let isDragging = false, offsetX = 0, offsetY = 0;
+
+  header.addEventListener('mousedown', function(e) {
+    if (e.target.classList.contains('popup-close')) return;
+    isDragging = true;
+    offsetX = e.clientX - popup.offsetLeft;
+    offsetY = e.clientY - popup.offsetTop;
+    header.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    popup.style.left = Math.max(0, e.clientX - offsetX) + 'px';
+    popup.style.top = Math.max(0, e.clientY - offsetY) + 'px';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (isDragging) {
+      isDragging = false;
+      header.style.cursor = 'grab';
+    }
+  });
+
+  // Touch support
+  header.addEventListener('touchstart', function(e) {
+    if (e.target.classList.contains('popup-close')) return;
+    isDragging = true;
+    const t = e.touches[0];
+    offsetX = t.clientX - popup.offsetLeft;
+    offsetY = t.clientY - popup.offsetTop;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!isDragging) return;
+    const t = e.touches[0];
+    popup.style.left = Math.max(0, t.clientX - offsetX) + 'px';
+    popup.style.top = Math.max(0, t.clientY - offsetY) + 'px';
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() { isDragging = false; });
+})();
 </script>
 </body>
 </html>
